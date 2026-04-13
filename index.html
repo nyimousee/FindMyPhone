@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find My iPhone - Clone</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        :root {
+            --apple-blue: #007aff;
+            --glass: rgba(255, 255, 255, 0.85);
+            --bg-gray: #f2f2f7;
+        }
+
+        body, html { 
+            margin: 0; padding: 0; height: 100%; 
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+            overflow: hidden; background: var(--bg-gray);
+        }
+
+        /* --- LOGIN PAGE --- */
+        #login-screen {
+            position: fixed; inset: 0; z-index: 1000; background: white;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.5s ease;
+        }
+        .login-box { width: 320px; text-align: center; }
+        .login-box img { width: 70px; margin-bottom: 20px; }
+        .login-box h2 { font-weight: 400; margin-bottom: 30px; color: #1d1d1f; }
+        .login-box input { 
+            width: 100%; padding: 14px; margin: 5px 0; 
+            border: 1px solid #d2d2d7; border-radius: 12px; 
+            font-size: 17px; box-sizing: border-box;
+        }
+        .login-box button { 
+            width: 100%; padding: 14px; background: var(--apple-blue); 
+            color: white; border: none; border-radius: 12px; 
+            font-size: 17px; cursor: pointer; margin-top: 15px; 
+        }
+
+        /* --- DASHBOARD LAYOUT --- */
+        #dashboard { 
+            display: none; height: 100vh; width: 100vw; 
+            position: relative;
+        }
+
+        /* Sidebar Glassmorphism */
+        .sidebar {
+            position: absolute; top: 20px; left: 20px; bottom: 20px;
+            width: 350px; background: var(--glass); backdrop-filter: blur(20px);
+            z-index: 100; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            display: flex; flex-direction: column; padding: 24px; box-sizing: border-box;
+        }
+
+        .device-list-item {
+            display: flex; align-items: center; padding: 16px;
+            background: white; border-radius: 18px; margin-top: 20px;
+            cursor: pointer; transition: 0.2s; border: 2px solid transparent;
+        }
+        .device-list-item.active { border-color: var(--apple-blue); }
+        
+        .device-icon { 
+            width: 45px; height: 45px; background: #e5e5ea; 
+            border-radius: 10px; margin-right: 15px;
+            display: flex; align-items: center; justify-content: center; font-size: 20px;
+        }
+
+        .controls-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: auto;
+        }
+        .btn { 
+            padding: 15px; border-radius: 14px; border: none; 
+            font-weight: 600; cursor: pointer; font-size: 14px;
+            transition: 0.2s;
+        }
+        .btn-gray { background: #f2f2f7; color: var(--apple-blue); }
+        .btn-orange { background: #ff9500; color: white; }
+        .btn-red { background: #ff3b30; color: white; grid-column: span 2; }
+        .btn:active { transform: scale(0.98); opacity: 0.8; }
+
+        /* --- MAP --- */
+        #map { height: 100%; width: 100%; z-index: 1; }
+
+        /* --- LOST MODE & ERASE OVERLAYS --- */
+        #lost-mode-screen {
+            position: fixed; inset: 0; background: black; color: white;
+            z-index: 9999; display: none; flex-direction: column;
+            align-items: center; justify-content: center; text-align: center;
+        }
+
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen">
+        <div class="login-box">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg" alt="Apple">
+            <h2>Cari iPhone Saya</h2>
+            <input type="email" id="email" placeholder="Apple ID" value="nyimousee@gmail.com">
+            <input type="password" id="pass" placeholder="Kata Sandi" value="password">
+            <button onclick="doLogin()">Masuk</button>
+        </div>
+    </div>
+
+    <div id="dashboard">
+        <div class="sidebar">
+            <h2 style="margin:0; font-size: 28px; letter-spacing: -0.5px;">Perangkat</h2>
+            
+            <div class="device-list-item active">
+                <div class="device-icon">📱</div>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600;">iPhone 15 </div>
+                    <div id="status-text" style="font-size: 13px; color: #8e8e93;">Baru saja diperbarui • 85%</div>
+                </div>
+            </div>
+
+            <div class="controls-grid">
+                <button class="btn btn-gray" onclick="playSound()">🔊 Putar Bunyi</button>
+                <button class="btn btn-orange" onclick="enableLostMode()">🔒 Mode Hilang</button>
+                <button class="btn btn-red" onclick="eraseDevice()">🗑️ Hapus Perangkat Ini</button>
+            </div>
+        </div>
+
+        <div id="map"></div>
+    </div>
+
+    <div id="lost-mode-screen">
+        <h1 style="font-size: 40px; margin-bottom: 10px;">iPhone Hilang</h1>
+        <p id="lost-message" style="font-size: 20px; max-width: 80%; line-height: 1.5; color: #d2d2d7;"></p>
+        <button onclick="disableLostMode()" style="margin-top: 40px; background: none; border: 1px solid white; color: white; padding: 10px 20px; border-radius: 8px; cursor: pointer;">Matikan</button>
+    </div>
+
+    <audio id="alarm-sound" src="https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg" loop></audio>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        let map, marker, circle;
+        const alarm = document.getElementById('alarm-sound');
+
+        // LOGIN FUNCTION
+        function doLogin() {
+            document.getElementById('login-screen').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('dashboard').style.display = 'block';
+                initMap();
+                startTracking();
+            }, 500);
+        }
+
+        // INITIALIZE MAP (Leaflet)
+        function initMap() {
+            // Default ke Jakarta jika GPS belum siap
+            map = L.map('map', { zoomControl: true }).setView([-6.156957, 106.833640], 15);
+            
+            // Tile layer yang bersih (CartoDB Positron)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(map);
+
+            marker = L.marker([-6.156957, 106.833640]).addTo(map);
+            circle = L.circle([-6.156957, 106.833640], { radius: 100, color: '#007aff', fillOpacity: 0.1 }).addTo(map);
+        }
+
+        // REAL-TIME TRACKING
+        function startTracking() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition((position) => {
+                    const { latitude, longitude, accuracy } = position.coords;
+                    const latlng = [latitude, longitude];
+
+                    marker.setLatLng(latlng);
+                    circle.setLatLng(latlng);
+                    circle.setRadius(accuracy);
+                    map.flyTo(latlng, 16);
+
+                    document.getElementById('status-text').innerText = "Online • Lokasi Sekarang";
+                }, (err) => {
+                    console.error("GPS Error:", err);
+                    document.getElementById('status-text').innerText = "Offline • Lokasi Terakhir";
+                }, {
+                    enableHighAccuracy: true
+                });
+            }
+        }
+
+        // FEATURE: PLAY SOUND
+        function playSound() {
+            alarm.currentTime = 0;
+            alarm.play();
+            alert("🔊 Bunyi sedang diputar di iPhone 15 dengan volume maksimum.");
+        }
+
+        // FEATURE: LOST MODE
+        function enableLostMode() {
+            const phone = prompt("Masukkan nomor telepon untuk dihubungi:", "0857-2289-6576");
+            const msg = prompt("Pesan untuk layar kunci:", "Tolong kembalikan HP ini, ada data penting portofolio saya.");
+            
+            if (phone && msg) {
+                document.getElementById('lost-message').innerHTML = `${msg}<br><br><span style="color:#34c759; font-weight:bold;">Hubungi: ${phone}</span>`;
+                document.getElementById('lost-mode-screen').style.display = 'flex';
+                alarm.play(); // Putar bunyi otomatis saat mode hilang
+            }
+        }
+
+        function disableLostMode() {
+            document.getElementById('lost-mode-screen').style.display = 'none';
+            alarm.pause();
+        }
+
+        // FEATURE: ERASE DATA
+        function eraseDevice() {
+            const confirmErase = confirm("Apakah Anda yakin ingin menghapus iPhone ini? Semua data akan dihapus dan perangkat tidak bisa dilacak lagi.");
+            if (confirmErase) {
+                alert("Perintah hapus dikirim. Semua konten sedang dihapus...");
+                location.reload(); // Reset aplikasi
+            }
+        }
+
+        // Stop sound if alert is closed (optional UX)
+        window.onclick = function() {
+            // Kita biarkan suara menyala sampai dimatikan manual
+        };
+    </script>
+</body>
+</html>
